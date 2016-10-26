@@ -10,6 +10,6 @@ pub trait IntoScript {
 impl IntoScript for Object {
     fn into_script(mut self) -> Result<Script> {
         let body = try!(self.extract_stmt_list("body"));
-        Ok(Script { location: None, body: body })
+        Ok(Script { location: try!(self.extract_loc()), body: body })
     }
 }

@@ -170,8 +170,7 @@ fn unit_tests(target: &mut Vec<TestDescAndFn>) {
             let mut source = String::new();
             File::open(source_path).unwrap().read_to_string(&mut source).unwrap();
             match script(&source[..]) {
-                Ok(mut actual_ast) => {
-                    actual_ast.untrack();
+                Ok(actual_ast) => {
                     assert!(actual_ast == expected_ast, "unit test got wrong result\n\
                     expected AST: {:#?}\n\
                     actual AST: {:#?}", expected_ast, actual_ast);

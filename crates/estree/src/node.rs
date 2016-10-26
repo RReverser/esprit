@@ -1,5 +1,7 @@
 use unjson::ty::Object;
 use unjson::{ExtractField, Unjson};
+use unjson::error::Error::MissingField;
+use joker::track::{Posn, Span};
 use easter::id::Id;
 use easter::expr::Expr;
 use easter::stmt::{Stmt, StmtListItem, Case, Catch};
@@ -18,6 +20,8 @@ use obj::IntoObj;
 use decl::IntoDecl;
 
 pub trait ExtractNode {
+    fn extract_pos(&mut self, &'static str) -> Result<Posn>;
+    fn extract_loc(&mut self) -> Result<Option<Span>>;
     fn extract_id(&mut self, &'static str) -> Result<Id>;
     fn extract_id_opt(&mut self, &'static str) -> Result<Option<Id>>;
     fn extract_assign_target(&mut self, &'static str) -> Result<AssignTarget>;
@@ -38,6 +42,45 @@ pub trait ExtractNode {
 }
 
 impl ExtractNode for Object {
+    fn extract_pos(&mut self, name: &'static str) -> Result<Posn> {
+        let mut pos = try!(self.extract_object(name).map_err(Error::Json));
+        Ok(Posn {
+            offset: 0,
+            line: try!(pos.extract_u64("line").map_err(Error::Json)) as u32 - 1,
+            column: try!(pos.extract_u64("column").map_err(Error::Json)) as u32
+        })
+    }
+
+    fn extract_loc(&mut self) -> Result<Option<Span>> {
+        let loc = try!(self.extract_object_opt("loc").or_else(|err| match err {
+            MissingField(_) => Ok(None),
+            _ => Err(Error::Json(err))
+        }));
+        let range = try!(self.extract_array_opt("range").or_else(|err| match err {
+            MissingField(_) => Ok(None),
+            _ => Err(Error::Json(err))
+        }));
+        if loc == None && range == None {
+            return Ok(None)
+        }
+        let mut span = if let Some(mut loc) = loc {
+            Span {
+                start: try!(loc.extract_pos("start")),
+                end: try!(loc.extract_pos("end"))
+            }
+        } else {
+            Span {
+                start: Posn::origin(),
+                end: Posn::origin()
+            }
+        };
+        if let Some(range) = range {
+            span.start.offset = try!(range[0].into_u64().map_err(Error::Json)) as u32;
+            span.end.offset = try!(range[1].into_u64().map_err(Error::Json)) as u32;
+        }
+        Ok(Some(span))
+    }
+
     fn extract_id(&mut self, name: &'static str) -> Result<Id> {
         self.extract_object(name).map_err(Error::Json).and_then(|o| o.into_id())
     }

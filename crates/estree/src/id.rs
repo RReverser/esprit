@@ -1,5 +1,6 @@
 use easter::id::Id;
 use unjson::ExtractField;
+use node::ExtractNode;
 use unjson::ty::Object;
 use joker::word::Name;
 
@@ -18,7 +19,7 @@ impl IntoId for Object {
             return node_type_error("identifier", tag);
         }
         Ok(Id {
-            location: None,
+            location: try!(self.extract_loc()),
             name: Name::from(try!(self.extract_string("name").map_err(Error::Json)))
         })
     }

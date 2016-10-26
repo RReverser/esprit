@@ -26,6 +26,6 @@ impl IntoFun for Object {
             Stmt::Block(None, items) => items,
             _ => { return node_type_error("BlockStatement", tag); }
         };
-        Ok(Fun { location: None, id: id, params: params, body: body })
+        Ok(Fun { location: try!(self.extract_loc()), id: id, params: params, body: body })
     }
 }

@@ -35,17 +35,18 @@ impl IntoObj for Object {
             }
             _ => { return type_error("'init', 'get', or 'set'", Ty::String); }
         };
-        Ok(Prop { location: None, key: key, val: val })
+        Ok(Prop { location: try!(self.extract_loc()), key: key, val: val })
     }
 
-    fn into_prop_key(self) -> Result<PropKey> {
+    fn into_prop_key(mut self) -> Result<PropKey> {
         if try!(self.tag()) == Tag::Identifier {
+            let loc = try!(self.extract_loc());
             let id = try!(self.into_id());
-            return Ok(PropKey::Id(None, id.name.into_string()));
+            return Ok(PropKey::Id(loc, id.name.into_string()));
         }
         match try!(self.into_lit()) {
-            Expr::Number(_, lit) => Ok(PropKey::Number(None, lit)),
-            Expr::String(_, lit) => Ok(PropKey::String(None, lit)),
+            Expr::Number(loc, lit) => Ok(PropKey::Number(loc, lit)),
+            Expr::String(loc, lit) => Ok(PropKey::String(loc, lit)),
             _ => { return type_error("identifier, number literal, or string literal", Ty::Object); }
         }
     }

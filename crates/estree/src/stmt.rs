@@ -117,28 +117,28 @@ impl IntoStmt for Object {
         Ok(match tag {
             Tag::VariableDeclaration => {
                 let dtors = try!(self.extract_dtor_list("declarations"));
-                Stmt::Var(None, dtors, Semi::Explicit(None))
+                Stmt::Var(try!(self.extract_loc()), dtors, Semi::Explicit(None))
             }
             Tag::EmptyStatement => Stmt::Empty(None),
             Tag::ExpressionStatement => {
                 let expr = try!(self.extract_expr("expression"));
-                Stmt::Expr(None, expr, Semi::Explicit(None))
+                Stmt::Expr(try!(self.extract_loc()), expr, Semi::Explicit(None))
             }
             Tag::IfStatement => {
                 let test = try!(self.extract_expr("test"));
                 let cons = Box::new(try!(self.extract_stmt("consequent")));
                 let alt = try!(self.extract_stmt_opt("alternate")).map(Box::new);
-                Stmt::If(None, test, cons, alt)
+                Stmt::If(try!(self.extract_loc()), test, cons, alt)
             }
             Tag::DoWhileStatement => {
                 let body = Box::new(try!(self.extract_stmt("body")));
                 let test = try!(self.extract_expr("test"));
-                Stmt::DoWhile(None, body, test, Semi::Explicit(None))
+                Stmt::DoWhile(try!(self.extract_loc()), body, test, Semi::Explicit(None))
             }
             Tag::WhileStatement => {
                 let test = try!(self.extract_expr("test"));
                 let body = Box::new(try!(self.extract_stmt("body")));
-                Stmt::While(None, test, body)
+                Stmt::While(try!(self.extract_loc()), test, body)
             }
             Tag::ForStatement => {
                 let init = match try!(self.extract_object_opt("init").map_err(Error::Json)) {
@@ -148,57 +148,57 @@ impl IntoStmt for Object {
                 let test = try!(self.extract_expr_opt("test"));
                 let update = try!(self.extract_expr_opt("update"));
                 let body = Box::new(try!(self.extract_stmt("body")));
-                Stmt::For(None, init, test, update, body)
+                Stmt::For(try!(self.extract_loc()), init, test, update, body)
             }
             Tag::ForInStatement => {
                 let left = try!(try!(self.extract_object("left").map_err(Error::Json)).into_for_in_head());
                 let right = try!(self.extract_expr("right"));
                 let body = try!(self.extract_stmt("body"));
-                Stmt::ForIn(None, Box::new(left), right, Box::new(body))
+                Stmt::ForIn(try!(self.extract_loc()), Box::new(left), right, Box::new(body))
             }
             Tag::ForOfStatement => {
                 let left = try!(try!(self.extract_object("left").map_err(Error::Json)).into_for_of_head());
                 let right = try!(self.extract_expr("right"));
                 let body = try!(self.extract_stmt("body"));
-                Stmt::ForOf(None, Box::new(left), right, Box::new(body))
+                Stmt::ForOf(try!(self.extract_loc()), Box::new(left), right, Box::new(body))
             }
             Tag::BlockStatement => {
                 let body = try!(self.extract_stmt_list("body"));
-                Stmt::Block(None, body)
+                Stmt::Block(try!(self.extract_loc()), body)
             }
             Tag::ReturnStatement => {
                 let arg = try!(self.extract_expr_opt("argument"));
-                Stmt::Return(None, arg, Semi::Explicit(None))
+                Stmt::Return(try!(self.extract_loc()), arg, Semi::Explicit(None))
             }
             Tag::LabeledStatement => {
                 let label = try!(self.extract_id("label"));
                 let body = Box::new(try!(self.extract_stmt("body")));
-                Stmt::Label(None, label, body)
+                Stmt::Label(try!(self.extract_loc()), label, body)
             }
             Tag::BreakStatement => {
                 let label = try!(self.extract_id_opt("label"));
-                Stmt::Break(None, label, Semi::Explicit(None))
+                Stmt::Break(try!(self.extract_loc()), label, Semi::Explicit(None))
             }
             Tag::ContinueStatement => {
                 let label = try!(self.extract_id_opt("label"));
-                Stmt::Cont(None, label, Semi::Explicit(None))
+                Stmt::Cont(try!(self.extract_loc()), label, Semi::Explicit(None))
             }
             Tag::SwitchStatement => {
                 let disc = try!(self.extract_expr("discriminant"));
                 let cases = try!(self.extract_case_list("cases"));
-                Stmt::Switch(None, disc, cases)
+                Stmt::Switch(try!(self.extract_loc()), disc, cases)
             }
             Tag::WithStatement => {
                 let obj = try!(self.extract_expr("object"));
                 let body = Box::new(try!(self.extract_stmt("body")));
-                Stmt::With(None, obj, body)
+                Stmt::With(try!(self.extract_loc()), obj, body)
             }
             Tag::ThrowStatement => {
                 let arg = try!(self.extract_expr("argument"));
-                Stmt::Throw(None, arg, Semi::Explicit(None))
+                Stmt::Throw(try!(self.extract_loc()), arg, Semi::Explicit(None))
             }
             Tag::DebuggerStatement => {
-                Stmt::Debugger(None, Semi::Explicit(None))
+                Stmt::Debugger(try!(self.extract_loc()), Semi::Explicit(None))
             }
             Tag::TryStatement => {
                 let mut block = try!(self.extract_object("block").map_err(Error::Json));
@@ -208,7 +208,7 @@ impl IntoStmt for Object {
                     Some(mut finalizer) => Some(try!(finalizer.extract_stmt_list("body"))),
                     None                => None
                 };
-                Stmt::Try(None, body, catch, finally)
+                Stmt::Try(try!(self.extract_loc()), body, catch, finally)
             }
             _ => { return node_type_error("statement", tag); }
         })
@@ -225,13 +225,13 @@ impl IntoStmt for Object {
     fn into_case(mut self) -> Result<Case> {
         let test = try!(self.extract_expr_opt("test"));
         let body = try!(self.extract_stmt_list("consequent"));
-        Ok(Case { location: None, test: test, body: body })
+        Ok(Case { location: try!(self.extract_loc()), test: test, body: body })
     }
 
     fn into_catch(mut self) -> Result<Catch> {
         let param = try!(self.extract_patt("param"));
         let mut body = try!(self.extract_object("body").map_err(Error::Json));
         let body = try!(body.extract_stmt_list("body"));
-        Ok(Catch { location: None, param: param, body: body })
+        Ok(Catch { location: try!(self.extract_loc()), param: param, body: body })
     }
 }
