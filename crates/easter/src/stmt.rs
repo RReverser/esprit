@@ -7,10 +7,17 @@ use patt::Patt;
 use punc::Semi;
 
 #[derive(Debug, PartialEq)]
+pub enum VarKind {
+    Var,
+    Let,
+    Const
+}
+
+#[derive(Debug, PartialEq)]
 pub enum Stmt {
     Empty(Option<Span>),
     Block(Option<Span>, Vec<StmtListItem>),
-    Var(Option<Span>, Vec<Dtor>, Semi),
+    Var(Option<Span>, VarKind, Vec<Dtor>, Semi),
     Expr(Option<Span>, Expr, Semi),
     If(Option<Span>, Expr, Box<Stmt>, Option<Box<Stmt>>),
     Label(Option<Span>, Id, Box<Stmt>),
@@ -34,7 +41,7 @@ impl TrackingRef for Stmt {
         match *self {
             Stmt::Empty(ref location)
           | Stmt::Block(ref location, _)
-          | Stmt::Var(ref location, _, _)
+          | Stmt::Var(ref location, _, _, _)
           | Stmt::Expr(ref location, _, _)
           | Stmt::If(ref location, _, _, _)
           | Stmt::Label(ref location, _, _)
@@ -60,7 +67,7 @@ impl TrackingMut for Stmt {
         match *self {
             Stmt::Empty(ref mut location)
           | Stmt::Block(ref mut location, _)
-          | Stmt::Var(ref mut location, _, _)
+          | Stmt::Var(ref mut location, _, _, _)
           | Stmt::Expr(ref mut location, _, _)
           | Stmt::If(ref mut location, _, _, _)
           | Stmt::Label(ref mut location, _, _)
@@ -87,7 +94,7 @@ impl Untrack for Stmt {
         match *self {
             Stmt::Empty(_)                                                       => { }
             Stmt::Block(_, ref mut items)                                        => { items.untrack(); }
-            Stmt::Var(_, ref mut dtors, ref mut semi)                            => { dtors.untrack(); semi.untrack(); }
+            Stmt::Var(_, _, ref mut dtors, ref mut semi)                         => { dtors.untrack(); semi.untrack(); }
             Stmt::Expr(_, ref mut expr, ref mut semi)                            => { expr.untrack(); semi.untrack(); }
             Stmt::If(_, ref mut test, ref mut cons, ref mut alt)                 => { test.untrack(); cons.untrack(); alt.untrack(); }
             Stmt::Label(_, ref mut lab, ref mut stmt)                            => { lab.untrack(); stmt.untrack(); }
@@ -110,16 +117,14 @@ impl Untrack for Stmt {
 
 #[derive(Debug, PartialEq)]
 pub enum ForHead {
-    Var(Option<Span>, Vec<Dtor>),
-    Let(Option<Span>, Vec<Dtor>),
+    Var(Option<Span>, VarKind, Vec<Dtor>),
     Expr(Option<Span>, Expr)
 }
 
 impl TrackingRef for ForHead {
     fn tracking_ref(&self) -> &Option<Span> {
         match *self {
-            ForHead::Var(ref location, _)
-          | ForHead::Let(ref location, _)
+            ForHead::Var(ref location, _, _)
           | ForHead::Expr(ref location, _) => location
         }
     }
@@ -128,8 +133,7 @@ impl TrackingRef for ForHead {
 impl TrackingMut for ForHead {
     fn tracking_mut(&mut self) -> &mut Option<Span> {
         match *self {
-            ForHead::Var(ref mut location, _)
-          | ForHead::Let(ref mut location, _)
+            ForHead::Var(ref mut location, _, _)
           | ForHead::Expr(ref mut location, _) => location
         }
     }
@@ -138,8 +142,7 @@ impl TrackingMut for ForHead {
 impl Untrack for ForHead {
     fn untrack(&mut self) {
         match *self {
-            ForHead::Var(ref mut location, ref mut vec)
-          | ForHead::Let(ref mut location, ref mut vec) => {
+            ForHead::Var(ref mut location, _, ref mut vec) => {
                 *location = None;
                 vec.untrack();
             }
@@ -154,8 +157,7 @@ impl Untrack for ForHead {
 #[derive(Debug, PartialEq)]
 pub enum ForInHead {
     VarInit(Option<Span>, Id, Expr),
-    Var(Option<Span>, Patt<Id>),
-    Let(Option<Span>, Patt<Id>),
+    Var(Option<Span>, VarKind, Patt<Id>),
     Expr(Expr)
 }
 
@@ -163,8 +165,7 @@ impl TrackingRef for ForInHead {
     fn tracking_ref(&self) -> &Option<Span> {
         match *self {
             ForInHead::VarInit(ref location, _, _)
-          | ForInHead::Var(ref location, _)
-          | ForInHead::Let(ref location, _) => location,
+          | ForInHead::Var(ref location, _, _) => location,
             ForInHead::Expr(ref expr) => expr.tracking_ref()
         }
     }
@@ -174,8 +175,7 @@ impl TrackingMut for ForInHead {
     fn tracking_mut(&mut self) -> &mut Option<Span> {
         match *self {
             ForInHead::VarInit(ref mut location, _, _)
-          | ForInHead::Var(ref mut location, _)
-          | ForInHead::Let(ref mut location, _) => location,
+          | ForInHead::Var(ref mut location, _, _) => location,
             ForInHead::Expr(ref mut expr) => expr.tracking_mut()
         }
     }
@@ -189,8 +189,7 @@ impl Untrack for ForInHead {
                 id.untrack();
                 expr.untrack();
             }
-            ForInHead::Var(ref mut location, ref mut patt)
-          | ForInHead::Let(ref mut location, ref mut patt) => {
+            ForInHead::Var(ref mut location, _, ref mut patt) => {
                 *location = None;
                 patt.untrack();
             }
@@ -203,16 +202,14 @@ impl Untrack for ForInHead {
 
 #[derive(Debug, PartialEq)]
 pub enum ForOfHead {
-    Var(Option<Span>, Patt<Id>),
-    Let(Option<Span>, Patt<Id>),
+    Var(Option<Span>, VarKind, Patt<Id>),
     Expr(Expr)
 }
 
 impl TrackingRef for ForOfHead {
     fn tracking_ref(&self) -> &Option<Span> {
         match *self {
-            ForOfHead::Var(ref location, _)
-          | ForOfHead::Let(ref location, _) => location,
+            ForOfHead::Var(ref location, _, _) => location,
             ForOfHead::Expr(ref expr) => expr.tracking_ref()
         }
     }
@@ -221,8 +218,7 @@ impl TrackingRef for ForOfHead {
 impl TrackingMut for ForOfHead {
     fn tracking_mut(&mut self) -> &mut Option<Span> {
         match *self {
-            ForOfHead::Var(ref mut location, _)
-          | ForOfHead::Let(ref mut location, _) => location,
+            ForOfHead::Var(ref mut location, _, _) => location,
             ForOfHead::Expr(ref mut expr) => expr.tracking_mut()
         }
     }
@@ -231,8 +227,7 @@ impl TrackingMut for ForOfHead {
 impl Untrack for ForOfHead {
     fn untrack(&mut self) {
         match *self {
-            ForOfHead::Var(ref mut location, ref mut patt)
-          | ForOfHead::Let(ref mut location, ref mut patt) => {
+            ForOfHead::Var(ref mut location, _, ref mut patt) => {
                 *location = None;
                 patt.untrack();
             }

@@ -5,7 +5,7 @@ use joker::word::{Atom, Name, Reserved};
 use joker::lexer::Lexer;
 use joker::context::Mode;
 use easter::prog::Script;
-use easter::stmt::{Stmt, StmtListItem, ForHead, ForInHead, ForOfHead, Case, Catch};
+use easter::stmt::{Stmt, StmtListItem, ForHead, ForInHead, ForOfHead, Case, Catch, VarKind};
 use easter::expr::Expr;
 use easter::decl::{Decl, Dtor, DtorExt};
 use easter::patt::{Patt, CompoundPatt};
@@ -155,7 +155,8 @@ impl<I: Iterator<Item=char>> Parser<I> {
     fn statement(&mut self) -> Result<Stmt> {
         match try!(self.peek()).value {
             TokenData::LBrace                       => self.block_statement(),
-            TokenData::Reserved(Reserved::Var)      => self.var_statement(),
+            TokenData::Reserved(Reserved::Var) |
+            TokenData::Reserved(Reserved::Const)    => self.var_statement(),
             TokenData::Semi                         => self.empty_statement(),
             TokenData::Reserved(Reserved::If)       => self.if_statement(),
             TokenData::Reserved(Reserved::Continue) => self.continue_statement(),
@@ -180,7 +181,11 @@ impl<I: Iterator<Item=char>> Parser<I> {
     fn id_statement(&mut self, id: Id) -> Result<Stmt> {
         match try!(self.peek_op()).value {
             TokenData::Colon => self.labelled_statement(id),
-            _                => {
+            TokenData::Identifier(_) |
+            TokenData::LBrace |
+            TokenData::LBrack
+            if id.name == Name::Atom(Atom::Let) => self.var_statement(),
+            _ => {
                 let span = self.start();
                 let expr = try!(self.id_expression(id));
                 Ok(try!(span.end_with_auto_semi(self, Newline::Required, |semi| Stmt::Expr(None, expr, semi))))
@@ -231,9 +236,14 @@ impl<I: Iterator<Item=char>> Parser<I> {
 
     fn var_statement(&mut self) -> Result<Stmt> {
         let span = self.start();
-        self.reread(TokenData::Reserved(Reserved::Var));
+        let kind = match try!(self.read()).value {
+            TokenData::Reserved(Reserved::Var) => VarKind::Var,
+            TokenData::Reserved(Reserved::Const) => VarKind::Const,
+            TokenData::Identifier(Name::Atom(Atom::Let)) => VarKind::Let,
+            _ => unreachable!()
+        };
         let dtors = try!(self.declarator_list());
-        Ok(try!(span.end_with_auto_semi(self, Newline::Required, |semi| Stmt::Var(None, dtors, semi))))
+        Ok(try!(span.end_with_auto_semi(self, Newline::Required, |semi| Stmt::Var(None, kind, dtors, semi))))
     }
 
     fn declarator_list(&mut self) -> Result<Vec<Dtor>> {
@@ -359,9 +369,9 @@ impl<I: Iterator<Item=char>> Parser<I> {
             this.reread(TokenData::Reserved(Reserved::For));
             try!(this.expect(TokenData::LParen));
             match try!(this.peek()).value {
-                TokenData::Reserved(Reserved::Var)           => this.for_var(),
-                TokenData::Identifier(Name::Atom(Atom::Let)) => this.for_let(),
-                TokenData::Reserved(Reserved::Const)         => { return Err(Error::UnsupportedFeature("const")); }
+                TokenData::Reserved(Reserved::Var) |
+                TokenData::Reserved(Reserved::Const) |
+                TokenData::Identifier(Name::Atom(Atom::Let)) => this.for_var(),
                 TokenData::Semi                              => {
                     this.reread(TokenData::Semi);
                     this.more_for(None)
@@ -373,7 +383,13 @@ impl<I: Iterator<Item=char>> Parser<I> {
 
     // 'for' '(' 'var' .
     fn for_var(&mut self) -> Result<Stmt> {
-        let var_token = self.reread(TokenData::Reserved(Reserved::Var));
+        let var_token = try!(self.read());
+        let kind = match var_token.value {
+            TokenData::Reserved(Reserved::Var) => VarKind::Var,
+            TokenData::Reserved(Reserved::Const) => VarKind::Const,
+            TokenData::Identifier(Name::Atom(Atom::Let)) => VarKind::Let,
+            _ => unreachable!()
+        };
         let var_location = Some(var_token.location);
         let lhs = try!(self.pattern());
         match try!(self.peek()).value {
@@ -381,15 +397,15 @@ impl<I: Iterator<Item=char>> Parser<I> {
             // 'for' '(' 'var' patt '=' . ==> C-style
             TokenData::Assign => {
                 self.reread(TokenData::Assign);
-                match lhs {
-                    Patt::Simple(id) => {
+                match (kind, lhs) {
+                    (VarKind::Var, Patt::Simple(id)) => {
                         let rhs = try!(self.allow_in(false, |this| this.assignment_expression()));
                         match try!(self.peek()).value {
                             // 'for' '(' 'var' id '=' expr ','  . ==> C-style
                             // 'for' '(' 'var' id '=' expr ';'  . ==> C-style
                             TokenData::Comma
                           | TokenData::Semi => {
-                                let head = Some(try!(self.more_for_head(&var_location, Dtor::from_simple_init(id, rhs), ForHead::Var)));
+                                let head = Some(try!(self.more_for_head(&var_location, Dtor::from_simple_init(id, rhs), VarKind::Var)));
                                 self.more_for(head)
                             }
                             // 'for' '(' 'var' id '=' expr 'in' . ==> legacy enumeration
@@ -402,9 +418,9 @@ impl<I: Iterator<Item=char>> Parser<I> {
                         }
                     }
                     // 'for' '(' 'var' patt '=' . ==> C-style
-                    Patt::Compound(patt) => {
+                    (kind, lhs) => {
                         let rhs = try!(self.allow_in(false, |this| this.assignment_expression()));
-                        let head = Some(try!(self.more_for_head(&var_location, Dtor::from_compound_init(patt, rhs), ForHead::Var)));
+                        let head = Some(try!(self.more_for_head(&var_location, Dtor::from_init(lhs, rhs), kind)));
                         self.more_for(head)
                     }
                 }
@@ -419,67 +435,21 @@ impl<I: Iterator<Item=char>> Parser<I> {
                     Ok(dtor) => dtor,
                     Err(_) => { return Err(Error::UnexpectedToken(try!(self.read()))); }
                 };
-                let head = Some(try!(self.more_for_head(&var_location, dtor, ForHead::Var)));
+                let head = Some(try!(self.more_for_head(&var_location, dtor, kind)));
                 self.more_for(head)
             }
             // 'for' '(' 'var' id   'in' . ==> enumeration
             // 'for' '(' 'var' patt 'in' . ==> enumeration
             TokenData::Reserved(Reserved::In) => {
                 self.reread(TokenData::Reserved(Reserved::In));
-                let head = Box::new(ForInHead::Var(span(&var_location, &lhs), lhs));
+                let head = Box::new(ForInHead::Var(span(&var_location, &lhs), kind, lhs));
                 self.more_for_in(head)
             }
             // 'for' '(' 'var' id   'of' . ==> enumeration
             // 'for' '(' 'var' patt 'of' . ==> enumeration
             TokenData::Identifier(Name::Atom(Atom::Of)) => {
                 self.reread(TokenData::Identifier(Name::Atom(Atom::Of)));
-                let head = Box::new(ForOfHead::Var(span(&var_location, &lhs), lhs));
-                self.more_for_of(head)
-            }
-            _ => Err(Error::UnexpectedToken(try!(self.read())))
-        }
-    }
-
-    // 'for' '(' 'let' .
-    fn for_let(&mut self) -> Result<Stmt> {
-        let let_token = self.reread(TokenData::Identifier(Name::Atom(Atom::Let)));
-        let let_location = Some(let_token.location);
-        // 'for' '(' 'let' . !{id, patt} ==> error
-        let lhs = try!(self.pattern());
-        match try!(self.peek()).value {
-            // 'for' '(' 'let' id   '=' . ==> C-style
-            // 'for' '(' 'let' patt '=' . ==> C-style
-            TokenData::Assign => {
-                self.reread(TokenData::Assign);
-                let rhs = try!(self.allow_in(false, |this| this.assignment_expression()));
-                let head = Some(try!(self.more_for_head(&let_location, Dtor::from_init(lhs, rhs), ForHead::Let)));
-                self.more_for(head)
-            }
-            TokenData::Comma
-          | TokenData::Semi => {
-                // 'for' '(' 'let' id   ',' . ==> C-style
-                // 'for' '(' 'let' id   ';' . ==> C-style
-                // 'for' '(' 'let' patt ',' . ==> error
-                // 'for' '(' 'let' patt ';' . ==> error
-                let dtor = match Dtor::from_init_opt(lhs, None) {
-                    Ok(dtor) => dtor,
-                    Err(_) => { return Err(Error::UnexpectedToken(try!(self.read()))); }
-                };
-                let head = Some(try!(self.more_for_head(&let_location, dtor, ForHead::Let)));
-                self.more_for(head)
-            }
-            // 'for' '(' 'let' id   'in' . ==> enumeration
-            // 'for' '(' 'let' patt 'in' . ==> enumeration
-            TokenData::Reserved(Reserved::In) => {
-                self.reread(TokenData::Reserved(Reserved::In));
-                let head = Box::new(ForInHead::Let(span(&let_location, &lhs), lhs));
-                self.more_for_in(head)
-            }
-            // 'for' '(' 'let' id   'of' . ==> enumeration
-            // 'for' '(' 'let' patt 'of' . ==> enumeration
-            TokenData::Identifier(Name::Atom(Atom::Of)) => {
-                self.reread(TokenData::Identifier(Name::Atom(Atom::Of)));
-                let head = Box::new(ForOfHead::Let(span(&let_location, &lhs), lhs));
+                let head = Box::new(ForOfHead::Var(span(&var_location, &lhs), kind, lhs));
                 self.more_for_of(head)
             }
             _ => Err(Error::UnexpectedToken(try!(self.read())))
@@ -509,16 +479,14 @@ impl<I: Iterator<Item=char>> Parser<I> {
     }
 
     // 'for' '(' dtor .
-    fn more_for_head<F>(&mut self, start: &Option<Span>, dtor: Dtor, op: F) -> Result<Box<ForHead>>
-      where F: FnOnce(Option<Span>, Vec<Dtor>) -> ForHead
-    {
+    fn more_for_head(&mut self, start: &Option<Span>, dtor: Dtor, kind: VarKind) -> Result<Box<ForHead>> {
         let dtors = try!(self.allow_in(false, |this| {
             let mut dtors = vec![dtor];
             try!(this.more_dtors(&mut dtors));
             Ok(dtors)
         }));
         let semi_location = Some(try!(self.expect(TokenData::Semi)).location);
-        Ok(Box::new(op(span(start, &semi_location), dtors)))
+        Ok(Box::new(ForHead::Var(span(start, &semi_location), kind, dtors)))
     }
 
     // 'for' '(' head ';' .

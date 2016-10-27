@@ -1,4 +1,4 @@
-use easter::stmt::{Stmt, ForHead, ForInHead, ForOfHead, StmtListItem, Case, Catch};
+use easter::stmt::{Stmt, ForHead, ForInHead, ForOfHead, StmtListItem, Case, Catch, VarKind};
 use easter::decl::Decl;
 use easter::punc::Semi;
 use easter::patt::Patt;
@@ -12,6 +12,15 @@ use error::{Error, string_error, array_error, node_type_error};
 use result::Result;
 use node::ExtractNode;
 
+fn convert_kind(kind: String) -> Result<VarKind> {
+    Ok(match &kind[..] {
+        "var" => VarKind::Var,
+        "let" => VarKind::Let,
+        "const" => VarKind::Const,
+        _ => { return string_error("var, let or const", kind); }
+    })
+}
+
 trait IntoForHead {
     fn into_for_head(self) -> Result<ForHead>;
 }
@@ -22,11 +31,7 @@ impl IntoForHead for Object {
             Tag::VariableDeclaration => {
                 let dtors = try!(self.extract_dtor_list("declarations"));
                 let kind = try!(self.extract_string("kind").map_err(Error::Json));
-                match &kind[..] {
-                    "var" => ForHead::Var(None, dtors),
-                    "let" => ForHead::Let(None, dtors),
-                    _ => { return string_error("var or let", kind); }
-                }
+                ForHead::Var(None, try!(convert_kind(kind)), dtors)
             }
             _ => ForHead::Expr(None, try!(self.into_expr()))
         })
@@ -49,28 +54,16 @@ impl IntoForInHead for Object {
                 let mut obj = try!(dtors.remove(0).into_object().map_err(Error::Json));
                 let lhs = try!(obj.extract_patt("id"));
                 let init = try!(obj.extract_expr_opt("init"));
-                match &kind[..] {
-                    "var" => match lhs {
-                        Patt::Simple(id) => {
-                            match init {
-                                None       => ForInHead::Var(None, Patt::Simple(id)),
-                                Some(expr) => ForInHead::VarInit(None, id, expr)
-                            }
-                        }
-                        Patt::Compound(patt) => {
-                            match init {
-                                None       => ForInHead::Var(None, Patt::Compound(patt)),
-                                Some(expr) => { return Err(Error::UnexpectedInitializer(expr)); }
-                            }
-                        }
-                    },
-                    "let" => {
-                        match init {
-                            None       => ForInHead::Let(None, lhs),
-                            Some(expr) => { return Err(Error::UnexpectedInitializer(expr)); }
-                        }
+                match (&kind[..], lhs, init) {
+                    ("var", Patt::Simple(id), Some(expr)) => {
+                        ForInHead::VarInit(None, id, expr)
                     }
-                    _ => { return string_error("var or let", kind); }
+                    (_, _, Some(expr)) => {
+                        return Err(Error::UnexpectedInitializer(expr));
+                    }
+                    (_, lhs, None) => {
+                        ForInHead::Var(None, try!(convert_kind(kind)), lhs)
+                    }
                 }
             }
             _ => ForInHead::Expr(try!(self.into_expr()))
@@ -93,11 +86,7 @@ impl IntoForOfHead for Object {
                 }
                 let mut obj = try!(dtors.remove(0).into_object().map_err(Error::Json));
                 let lhs = try!(obj.extract_patt("id"));
-                match &kind[..] {
-                    "var" => ForOfHead::Var(None, lhs),
-                    "let" => ForOfHead::Let(None, lhs),
-                    _ => { return string_error("var or let", kind); }
-                }
+                ForOfHead::Var(None, try!(convert_kind(kind)), lhs)
             },
             _ => ForOfHead::Expr(try!(self.into_expr()))
         })
@@ -116,8 +105,9 @@ impl IntoStmt for Object {
         let tag = try!(self.tag());
         Ok(match tag {
             Tag::VariableDeclaration => {
+                let kind = try!(self.extract_string("kind").map_err(Error::Json));
                 let dtors = try!(self.extract_dtor_list("declarations"));
-                Stmt::Var(None, dtors, Semi::Explicit(None))
+                Stmt::Var(None, try!(convert_kind(kind)), dtors, Semi::Explicit(None))
             }
             Tag::EmptyStatement => Stmt::Empty(None),
             Tag::ExpressionStatement => {
