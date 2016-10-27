@@ -1,10 +1,9 @@
 use joker::track::*;
 use joker::token::{StringLiteral, NumberLiteral};
 
-use id::Id;
 use expr::Expr;
 use stmt::StmtListItem;
-use patt::Patt;
+use decl::Dtor;
 
 #[derive(Debug, PartialEq)]
 pub struct DotKey {
@@ -84,7 +83,7 @@ impl Untrack for PropKey {
 pub enum PropVal {
     Init(Expr),
     Get(Option<Span>, Vec<StmtListItem>),
-    Set(Option<Span>, Patt<Id>, Vec<StmtListItem>)
+    Set(Option<Span>, Dtor, Vec<StmtListItem>)
 }
 
 impl TrackingRef for PropVal {

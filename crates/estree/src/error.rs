@@ -38,8 +38,8 @@ impl Display for Error {
             }
             &Error::UninitializedPattern(ref patt) => {
                 let ty = match *patt {
-                    CompoundPatt::Arr(_, _) => "array",
-                    CompoundPatt::Obj(_, _) => "object"
+                    CompoundPatt::Arr(_) => "array",
+                    CompoundPatt::Obj(_) => "object"
                 };
                 fmt.write_fmt(format_args!("uninitialized {} pattern in declarator", ty))
             }

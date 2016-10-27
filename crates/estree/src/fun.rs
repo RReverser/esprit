@@ -1,4 +1,4 @@
-use easter::fun::{Fun, Params};
+use easter::fun::Fun;
 use easter::stmt::Stmt;
 use unjson::ty::Object;
 use unjson::ExtractField;
@@ -16,10 +16,7 @@ pub trait IntoFun {
 impl IntoFun for Object {
     fn into_fun(mut self) -> Result<Fun> {
         let id = try!(self.extract_id_opt("id"));
-        let params = Params {
-            location: None,
-            list: try!(self.extract_patt_list("params"))
-        };
+        let params = try!(self.extract_patt_list("params"));
         let obj = try!(self.extract_object("body").map_err(Error::Json));
         let tag = try!(obj.tag());
         let body = match try!(obj.into_stmt()) {

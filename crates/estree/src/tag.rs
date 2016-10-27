@@ -29,6 +29,7 @@ pub enum Tag {
 
     FunctionDeclaration,
     VariableDeclaration,
+    VariableDeclarator,
 
     EmptyStatement,
     ExpressionStatement,
@@ -47,7 +48,11 @@ pub enum Tag {
     WithStatement,
     ThrowStatement,
     DebuggerStatement,
-    TryStatement
+    TryStatement,
+
+    AssignmentPattern,
+    ArrayPattern,
+    ObjectPattern
 }
 
 impl Display for Tag {
@@ -79,6 +84,7 @@ impl FromStr for Tag {
             "ThisExpression"        => Tag::ThisExpression,
             "FunctionDeclaration"   => Tag::FunctionDeclaration,
             "VariableDeclaration"   => Tag::VariableDeclaration,
+            "VariableDeclarator"    => Tag::VariableDeclarator,
             "EmptyStatement"        => Tag::EmptyStatement,
             "ExpressionStatement"   => Tag::ExpressionStatement,
             "IfStatement"           => Tag::IfStatement,
@@ -97,6 +103,9 @@ impl FromStr for Tag {
             "ThrowStatement"        => Tag::ThrowStatement,
             "DebuggerStatement"     => Tag::DebuggerStatement,
             "TryStatement"          => Tag::TryStatement,
+            "AssignmentPattern"     => Tag::AssignmentPattern,
+            "ArrayPattern"          => Tag::ArrayPattern,
+            "ObjectPattern"         => Tag::ObjectPattern,
             _ => { return Err(Error::InvalidTypeTag(String::from(s))); }
         })
     }

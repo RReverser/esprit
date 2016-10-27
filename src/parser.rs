@@ -8,7 +8,7 @@ use easter::prog::Script;
 use easter::stmt::{Stmt, StmtListItem, ForHead, ForInHead, ForOfHead, Case, Catch};
 use easter::expr::Expr;
 use easter::decl::{Decl, Dtor, DtorExt};
-use easter::patt::{Patt, CompoundPatt};
+use easter::patt::{Patt, OptionalPatt, CompoundPatt};
 use easter::fun::{Fun, Params};
 use easter::obj::{PropKey, PropVal, Prop, DotKey};
 use easter::id::{Id, IdExt};
@@ -99,22 +99,14 @@ impl<I: Iterator<Item=char>> Parser<I> {
     fn formal_parameters(&mut self) -> Result<Params> {
         self.span(&mut |this| {
             try!(this.expect(TokenData::LParen));
-            let list = try!(this.pattern_list());
+            let list = if try!(this.peek()).value == TokenData::RParen {
+                Vec::new()
+            } else {
+                try!(this.declarator_list())
+            };
             try!(this.expect(TokenData::RParen));
             Ok(Params { location: None, list: list })
         })
-    }
-
-    fn pattern_list(&mut self) -> Result<Vec<Patt<Id>>> {
-        let mut patts = Vec::new();
-        if try!(self.peek()).value == TokenData::RParen {
-            return Ok(patts);
-        }
-        patts.push(try!(self.pattern()));
-        while try!(self.matches(TokenData::Comma)) {
-            patts.push(try!(self.pattern()));
-        }
-        Ok(patts)
     }
 
     fn pattern(&mut self) -> Result<Patt<Id>> {
@@ -284,24 +276,12 @@ impl<I: Iterator<Item=char>> Parser<I> {
     }
 
     fn declarator(&mut self) -> Result<Dtor> {
-        self.span(&mut |this| {
-            match try!(this.peek()).value {
-                TokenData::Identifier(_) => {
-                    let id = try!(this.binding_id());
-                    let init = if try!(this.matches(TokenData::Assign)) {
-                        Some(try!(this.assignment_expression()))
-                    } else {
-                        None
-                    };
-                    Ok(Dtor::Simple(None, id, init))
-                }
-                _ => {
-                    let lhs = try!(this.binding_pattern());
-                    try!(this.expect(TokenData::Assign));
-                    let rhs = try!(this.assignment_expression());
-                    Ok(Dtor::Compound(None, lhs, rhs))
-                }
-            }
+        let patt = try!(self.pattern());
+        Ok(if try!(self.matches(TokenData::Assign)) {
+            let expr = try!(self.assignment_expression());
+            Dtor::from_init(patt, expr)
+        } else {
+            OptionalPatt::Simple(patt)
         })
     }
 
@@ -947,7 +927,7 @@ impl<I: Iterator<Item=char>> Parser<I> {
             TokenData::Identifier(Name::Atom(Atom::Set)) => {
                 if let Some(key) = try!(self.property_key_opt()) {
                     let paren_location = Some(try!(self.expect(TokenData::LParen)).location);
-                    let param = try!(self.pattern());
+                    let param = try!(self.declarator());
                     try!(self.expect(TokenData::RParen));
                     try!(self.expect(TokenData::LBrace));
                     let outer_cx = replace(&mut self.parser_cx, context::Context::new_function());

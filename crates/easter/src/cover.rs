@@ -2,7 +2,7 @@ use std::fmt;
 use std::fmt::{Display, Formatter};
 use joker::track::{Span, TrackingRef};
 use expr::Expr;
-use patt::{Patt, AssignTarget, CompoundPatt, PropPatt};
+use patt::{Patt, AssignTarget, CompoundPatt, PropPatt, PattList, OptionalPatt, DefaultPatt};
 use obj::{Prop, PropVal};
 
 #[derive(Debug, PartialEq)]
@@ -41,6 +41,7 @@ impl IntoAssignTarget for Expr {
 
 pub trait IntoAssignPatt : IntoAssignTarget {
     fn into_assign_patt(self) -> Result<Patt<AssignTarget>, Error>;
+    fn into_opt_assign_patt(self) -> Result<OptionalPatt<Patt<AssignTarget>>, Error>;
 }
 
 impl IntoAssignPatt for Expr {
@@ -49,23 +50,42 @@ impl IntoAssignPatt for Expr {
             Expr::Obj(location, props) => {
                 let mut prop_patts = Vec::with_capacity(props.len());
                 for prop in props {
-                    prop_patts.push(try!(prop.into_assign_prop()));
+                    prop_patts.push(OptionalPatt::Simple(try!(prop.into_assign_prop())));
                 }
-                Patt::Compound(CompoundPatt::Obj(location, prop_patts))
+                Patt::Compound(CompoundPatt::Obj(PattList {
+                    location: location,
+                    list: prop_patts
+                }))
             }
             Expr::Arr(location, exprs) => {
                 let mut patts = Vec::with_capacity(exprs.len());
                 for expr in exprs {
                     patts.push(match expr {
-                        Some(expr) => Some(try!(expr.into_assign_patt())),
+                        Some(expr) => Some(try!(expr.into_opt_assign_patt())),
                         None => None
                     });
                 }
-                Patt::Compound(CompoundPatt::Arr(location, patts))
+                Patt::Compound(CompoundPatt::Arr(PattList {
+                    location: location,
+                    list: patts
+                }))
             }
             _ => { return self.into_assign_target().map(Patt::Simple); }
         })
     }
+
+    fn into_opt_assign_patt(self) -> Result<OptionalPatt<Patt<AssignTarget>>, Error> {
+        match self {
+            Expr::Assign(location, lhs, rhs) => {
+                Ok(OptionalPatt::Default(DefaultPatt {
+                    location: location,
+                    patt: lhs,
+                    default: *rhs
+                }))
+            }
+            _ => self.into_assign_patt().map(OptionalPatt::Simple)
+        }
+    } 
 }
 
 pub trait IntoAssignProp {

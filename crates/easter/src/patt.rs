@@ -6,15 +6,15 @@ use obj::{PropKey, DotKey};
 
 #[derive(Debug, PartialEq)]
 pub enum CompoundPatt<T> {
-    Arr(Option<Span>, Vec<Option<Patt<T>>>),
-    Obj(Option<Span>, Vec<PropPatt<T>>)
+    Arr(PattList<Option<OptionalPatt<Patt<T>>>>),
+    Obj(PattList<OptionalPatt<PropPatt<T>>>)
 }
 
 impl<T> TrackingRef for CompoundPatt<T> {
     fn tracking_ref(&self) -> &Option<Span> {
         match *self {
-            CompoundPatt::Arr(ref location, _)
-          | CompoundPatt::Obj(ref location, _) => location
+            CompoundPatt::Arr(ref patts) => patts.tracking_ref(),
+            CompoundPatt::Obj(ref props) => props.tracking_ref()
         }
     }
 }
@@ -22,24 +22,94 @@ impl<T> TrackingRef for CompoundPatt<T> {
 impl<T> TrackingMut for CompoundPatt<T> {
     fn tracking_mut(&mut self) -> &mut Option<Span> {
         match *self {
-            CompoundPatt::Arr(ref mut location, _)
-          | CompoundPatt::Obj(ref mut location, _) => { location }
+            CompoundPatt::Arr(ref mut patts) => patts.tracking_mut(),
+            CompoundPatt::Obj(ref mut props) => props.tracking_mut()
         }
     }
 }
 
 impl<T: Untrack> Untrack for CompoundPatt<T> {
     fn untrack(&mut self) {
+        *self.tracking_mut() = None;
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct DefaultPatt<T> {
+    pub location: Option<Span>,
+    pub patt: T,
+    pub default: Expr
+}
+
+impl<T> TrackingRef for DefaultPatt<T> {
+    fn tracking_ref(&self) -> &Option<Span> { &self.location }
+}
+
+impl<T> TrackingMut for DefaultPatt<T> {
+    fn tracking_mut(&mut self) -> &mut Option<Span> { &mut self.location }
+}
+
+impl<T: Untrack> Untrack for DefaultPatt<T> {
+    fn untrack(&mut self) {
+        self.location = None;
+        self.patt.untrack();
+        self.default.untrack();
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum OptionalPatt<T> {
+    Simple(T),
+    Default(DefaultPatt<T>)
+}
+
+impl<T: TrackingRef> TrackingRef for OptionalPatt<T> {
+    fn tracking_ref(&self) -> &Option<Span> {
         match *self {
-            CompoundPatt::Arr(ref mut location, ref mut patts) => {
-                *location = None;
-                patts.untrack();
-            }
-            CompoundPatt::Obj(ref mut location, ref mut props) => {
-                *location = None;
-                props.untrack();
-            }
+            OptionalPatt::Simple(ref patt) => patt.tracking_ref(),
+            OptionalPatt::Default(ref def_patt) => def_patt.tracking_ref()
         }
+    }
+}
+
+impl<T: TrackingMut> TrackingMut for OptionalPatt<T> {
+    fn tracking_mut(&mut self) -> &mut Option<Span> {
+        match *self {
+            OptionalPatt::Simple(ref mut patt) => patt.tracking_mut(),
+            OptionalPatt::Default(ref mut def_patt) => def_patt.tracking_mut()
+        }
+    }
+}
+
+impl<T: Untrack> Untrack for OptionalPatt<T> {
+    fn untrack(&mut self) {
+        match *self {
+            OptionalPatt::Simple(ref mut patt) => patt.untrack(),
+            OptionalPatt::Default(ref mut def_patt) => def_patt.untrack()
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct PattList<E> {
+    pub location: Option<Span>,
+    pub list: Vec<E>,
+    // pub rest: Option<Patt<R>>
+}
+
+impl<E> TrackingRef for PattList<E> {
+    fn tracking_ref(&self) -> &Option<Span> { &self.location }
+}
+
+impl<E> TrackingMut for PattList<E> {
+    fn tracking_mut(&mut self) -> &mut Option<Span> { &mut self.location }
+}
+
+impl<E: Untrack> Untrack for PattList<E> {
+    fn untrack(&mut self) {
+        self.location = None;
+        self.list.untrack();
+        // self.rest.untrack();
     }
 }
 

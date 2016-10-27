@@ -1,29 +1,11 @@
 use joker::track::*;
 
 use id::Id;
-use patt::Patt;
+use patt::PattList;
 use stmt::StmtListItem;
+use decl::Dtor;
 
-#[derive(Debug, PartialEq)]
-pub struct Params {
-    pub location: Option<Span>,
-    pub list: Vec<Patt<Id>>
-}
-
-impl TrackingRef for Params {
-    fn tracking_ref(&self) -> &Option<Span> { &self.location }
-}
-
-impl TrackingMut for Params {
-    fn tracking_mut(&mut self) -> &mut Option<Span> { &mut self.location }
-}
-
-impl Untrack for Params {
-    fn untrack(&mut self) {
-        self.location = None;
-        self.list.untrack();
-    }
-}
+pub type Params = PattList<Dtor>;
 
 #[derive(Debug, PartialEq)]
 pub struct Fun {
