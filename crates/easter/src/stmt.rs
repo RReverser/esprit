@@ -12,6 +12,7 @@ pub enum Stmt {
     Empty(Option<Span>),
     Block(Option<Span>, Vec<StmtListItem>),
     Var(Option<Span>, Vec<Dtor>, Semi),
+    Let(Option<Span>, Vec<Dtor>, Semi),
     Expr(Option<Span>, Expr, Semi),
     If(Option<Span>, Expr, Box<Stmt>, Option<Box<Stmt>>),
     Label(Option<Span>, Id, Box<Stmt>),
@@ -96,6 +97,7 @@ impl TrackingRef for Stmt {
             Stmt::Empty(ref location)
           | Stmt::Block(ref location, _)
           | Stmt::Var(ref location, _, _)
+          | Stmt::Let(ref location, _, _)
           | Stmt::Expr(ref location, _, _)
           | Stmt::If(ref location, _, _, _)
           | Stmt::Label(ref location, _, _)
@@ -122,6 +124,7 @@ impl TrackingMut for Stmt {
             Stmt::Empty(ref mut location)
           | Stmt::Block(ref mut location, _)
           | Stmt::Var(ref mut location, _, _)
+          | Stmt::Let(ref mut location, _, _)
           | Stmt::Expr(ref mut location, _, _)
           | Stmt::If(ref mut location, _, _, _)
           | Stmt::Label(ref mut location, _, _)
@@ -148,7 +151,7 @@ impl Untrack for Stmt {
         match *self {
             Stmt::Empty(_)                                                       => { }
             Stmt::Block(_, ref mut items)                                        => { items.untrack(); }
-            Stmt::Var(_, ref mut dtors, ref mut semi)                            => { dtors.untrack(); semi.untrack(); }
+            Stmt::Var(_, ref mut dtors, ref mut semi) | Stmt::Let(_, ref mut dtors, ref mut semi) => { dtors.untrack(); semi.untrack(); }
             Stmt::Expr(_, ref mut expr, ref mut semi)                            => { expr.untrack(); semi.untrack(); }
             Stmt::If(_, ref mut test, ref mut cons, ref mut alt)                 => { test.untrack(); cons.untrack(); alt.untrack(); }
             Stmt::Label(_, ref mut lab, ref mut stmt)                            => { lab.untrack(); stmt.untrack(); }
