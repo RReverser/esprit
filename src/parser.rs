@@ -194,7 +194,7 @@ impl<I: Iterator<Item=char>> Parser<I> {
             Ok(Module {
                 location: None,
                 dirs: this.body_directives()?,
-                items: this.module_items()?
+                items: this.module_iter().collect::<Result<_>>()?
             })
         })
     }
@@ -238,7 +238,8 @@ impl<I: Iterator<Item=char>> Parser<I> {
         let mut use_strict = false;
         let mut use_module = false;
 
-        while let Some(dir) = self.match_directive_opt()? {
+        for dir in self.iter_opt(Self::match_directive_opt) {
+            let dir = dir?;
             match dir.pragma() {
                 "use strict" => { use_strict = true; }
                 "use module" => { use_module = true; }
@@ -277,52 +278,26 @@ impl<I: Iterator<Item=char>> Parser<I> {
     }
 
     fn program_items(&mut self) -> Result<ProgramItems> {
-        let mut stmts: Vec<StmtListItem> = Vec::new();
+        let stmts = self.statement_list()?;
 
-        while !self.peek()?.follow_statement_list() {
-            match self.peek()?.value {
-                TokenData::Reserved(Reserved::Import)
-              | TokenData::Reserved(Reserved::Export) => {
-                    self.force_deferred_module_validation()?;
-                    let items = self.more_module_items(stmts.into_iter().map(|stmt| stmt.into_mod_item()).collect())?;
-                    return Ok(ProgramItems::Module(items));
-                }
-                _ => { }
+        Ok(match self.peek()?.value {
+            TokenData::Reserved(Reserved::Import)
+            | TokenData::Reserved(Reserved::Export) => {
+                self.force_deferred_module_validation()?;
+
+                ProgramItems::Module(
+                    stmts.into_iter()
+                    .map(|stmt| Ok(stmt.into_mod_item()))
+                    .chain(self.module_iter())
+                    .collect::<Result<_>>()?
+                )
             }
-
-            stmts.push(self.stmt_list_item()?);
-        }
-
-        Ok(ProgramItems::Script(stmts))
-    }
-
-    fn module_items(&mut self) -> Result<Vec<ModItem>> {
-        self.more_module_items(Vec::new())
-    }
-
-    fn more_module_items(&mut self, mut items: Vec<ModItem>) -> Result<Vec<ModItem>> {
-        while !self.peek()?.follow_statement_list() {
-            match self.peek()?.value {
-                // ES6: import declaration
-                TokenData::Reserved(Reserved::Import) => unimplemented!(),
-                // ES6: export declaration
-                TokenData::Reserved(Reserved::Export) => unimplemented!(),
-                _ => { }
-            }
-
-            items.push(ModItem::StmtListItem(self.stmt_list_item()?))
-        }
-
-        Ok(items)
+            _ => ProgramItems::Script(stmts)
+        })
     }
 
     fn statement_list(&mut self) -> Result<Vec<StmtListItem>> {
-        let mut items = Vec::new();
-        while !self.peek()?.follow_statement_list() {
-            //println!("statement at: {:?}", self.peek()?.location().unwrap().start);
-            items.push(self.stmt_list_item()?);
-        }
-        Ok(items)
+        self.iter_opt(Self::stmt_list_item_opt).collect()
     }
 
     fn stmt_list_item(&mut self) -> Result<StmtListItem> {
@@ -330,6 +305,33 @@ impl<I: Iterator<Item=char>> Parser<I> {
             TokenData::Reserved(Reserved::Function) => StmtListItem::Decl(self.function_declaration()?),
             _                                       => StmtListItem::Stmt(self.statement()?)
         })
+    }
+
+    fn stmt_list_item_opt(&mut self) -> Result<Option<StmtListItem>> {
+        Ok(if !self.peek()?.follow_statement_list() {
+            Some(self.stmt_list_item()?)
+        } else {
+            None
+        })
+    }
+
+    fn module_item_opt(&mut self) -> Result<Option<ModItem>> {
+        Ok(match self.stmt_list_item_opt()? {
+            Some(stmt) => Some(ModItem::StmtListItem(stmt)),
+            None => {
+                match self.peek()?.value {
+                    // ES6: import declaration
+                    TokenData::Reserved(Reserved::Import) => unimplemented!(),
+                    // ES6: export declaration
+                    TokenData::Reserved(Reserved::Export) => unimplemented!(),
+                    _ => None
+                }
+            }
+        })
+    }
+
+    fn module_iter<'a>(&'a mut self) -> ParserIterator<'a, I, ModItem> {
+        self.iter_opt(Self::module_item_opt)
     }
 
     fn function_declaration(&mut self) -> Result<Decl> {
