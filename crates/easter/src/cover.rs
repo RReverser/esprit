@@ -4,6 +4,7 @@ use joker::track::{Span, TrackingRef};
 use expr::Expr;
 use patt::{Patt, AssignTarget, CompoundPatt, PropPatt};
 use obj::{Prop, PropVal};
+use vecutil::VecUtil;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Error {
@@ -45,26 +46,18 @@ pub trait IntoAssignPatt : IntoAssignTarget {
 
 impl IntoAssignPatt for Expr {
     fn into_assign_patt(self) -> Result<Patt<AssignTarget>, Error> {
-        Ok(match self {
+        Ok(Patt::Compound(match self {
             Expr::Obj(location, props) => {
-                let mut prop_patts = Vec::with_capacity(props.len());
-                for prop in props {
-                    prop_patts.push(prop.into_assign_prop()?);
-                }
-                Patt::Compound(CompoundPatt::Obj(location, prop_patts))
+                CompoundPatt::Obj(location, props.map(|prop| prop.into_assign_prop())?)
             }
             Expr::Arr(location, exprs) => {
-                let mut patts = Vec::with_capacity(exprs.len());
-                for expr in exprs {
-                    patts.push(match expr {
-                        Some(expr) => Some(expr.into_assign_patt()?),
-                        None => None
-                    });
-                }
-                Patt::Compound(CompoundPatt::Arr(location, patts))
+                CompoundPatt::Arr(location, exprs.map(|expr| match expr {
+                    Some(expr) => expr.into_assign_patt().map(Some),
+                    None => Ok(None)
+                })?)
             }
             _ => { return self.into_assign_target().map(Patt::Simple); }
-        })
+        }))
     }
 }
 

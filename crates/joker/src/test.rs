@@ -42,11 +42,9 @@ pub trait IntoTestSuite {
 
 impl IntoTestSuite for Array {
     fn into_lexer_test_suite(self) -> Result<Vec<LexerTest>> {
-        let mut result = Vec::with_capacity(self.len());
-        for data in self {
-            result.push(data.into_lexer_test()?);
-        }
-        Ok(result)
+        self.into_iter()
+        .map(|data| data.into_lexer_test())
+        .collect()
     }
 }
 
@@ -86,11 +84,9 @@ trait IntoStringSet {
 
 impl IntoStringSet for Array {
     fn into_string_set(self) -> Result<HashSet<String>> {
-        let mut set = HashSet::new();
-        for data in self {
-            set.insert(data.into_string()?);
-        }
-        Ok(set)
+        self.into_iter()
+        .map(|data| data.into_string())
+        .collect()
     }
 }
 

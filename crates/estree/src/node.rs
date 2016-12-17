@@ -7,9 +7,10 @@ use easter::patt::{Patt, AssignTarget};
 use easter::obj::Prop;
 use easter::decl::Dtor;
 use easter::cover::{IntoAssignTarget, IntoAssignPatt};
+use easter::vecutil::VecUtil;
 
 use error::Error;
-use result::{Result, Map};
+use result::Result;
 use id::IntoId;
 use stmt::IntoStmt;
 use expr::IntoExpr;

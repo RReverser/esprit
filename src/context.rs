@@ -20,12 +20,15 @@ impl<I: Iterator<Item=char>> WithContext for Parser<I> {
     fn with_labels<F>(&mut self, mut labels: Vec<Id>, label_type: LabelType, op: F) -> Result<Stmt>
       where F: FnOnce(&mut Self) -> Result<Stmt>
     {
-        let mut label_strings = Vec::new();
-        for id in labels.iter() {
-            let label = Rc::new(id.name.clone());
-            self.context.labels.insert(label.clone(), label_type);
-            label_strings.push(label);
-        }
+        let label_strings: Vec<_> =
+            labels.iter()
+            .map(|id| {
+                let label = Rc::new(id.name.clone());
+                self.context.labels.insert(label.clone(), label_type);
+                label
+            })
+            .collect();
+
         let result = op(self);
         for label in label_strings {
             self.context.labels.remove(&label);

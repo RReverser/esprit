@@ -35,6 +35,11 @@ pub struct Parser<I> {
     pub context: Context
 }
 
+struct ParserIterator<'a, I, T> where I: 'a {
+    parser: &'a mut Parser<I>,
+    method: fn(parser: &mut Parser<I>) -> Result<Option<T>>,
+}
+
 enum ProgramItems {
     Script(Vec<StmtListItem>),
     Module(Vec<ModItem>)
@@ -151,6 +156,13 @@ impl<I: Iterator<Item=char>> Parser<I> {
             deferred: Vec::new(),
             lexer: lexer,
             context: Context::new()
+        }
+    }
+
+    fn iter_opt<'a, T>(&'a mut self, f: fn(&mut Self) -> Result<Option<T>>) -> ParserIterator<'a, I, T> {
+        ParserIterator {
+            parser: self,
+            method: f,
         }
     }
 
@@ -278,10 +290,7 @@ impl<I: Iterator<Item=char>> Parser<I> {
                 _ => { }
             }
 
-            match self.declaration_opt()? {
-                Some(decl) => { stmts.push(StmtListItem::Decl(decl)); }
-                None       => { stmts.push(StmtListItem::Stmt(self.statement()?)); }
-            }
+            stmts.push(self.stmt_list_item()?);
         }
 
         Ok(ProgramItems::Script(stmts))
@@ -301,10 +310,7 @@ impl<I: Iterator<Item=char>> Parser<I> {
                 _ => { }
             }
 
-            match self.declaration_opt()? {
-                Some(decl) => { items.push(ModItem::Decl(decl)); }
-                None       => { items.push(ModItem::Stmt(self.statement()?)); }
-            }
+            items.push(ModItem::StmtListItem(self.stmt_list_item()?))
         }
 
         Ok(items)
@@ -314,28 +320,16 @@ impl<I: Iterator<Item=char>> Parser<I> {
         let mut items = Vec::new();
         while !self.peek()?.follow_statement_list() {
             //println!("statement at: {:?}", self.peek()?.location().unwrap().start);
-            match self.declaration_opt()? {
-                Some(decl) => { items.push(StmtListItem::Decl(decl)); }
-                None       => { items.push(StmtListItem::Stmt(self.statement()?)); }
-            }
+            items.push(self.stmt_list_item()?);
         }
         Ok(items)
     }
 
-/*
-    pub fn declaration(&mut self) -> Result<Decl> {
-        match self.declaration_opt()? {
-            Some(decl) => Ok(decl),
-            None       => Err(Error::UnexpectedToken(self.read()?))
-        }
-    }
-*/
-
-    fn declaration_opt(&mut self) -> Result<Option<Decl>> {
-        match self.peek()?.value {
-            TokenData::Reserved(Reserved::Function) => Ok(Some(self.function_declaration()?)),
-            _                                       => Ok(None)
-        }
+    fn stmt_list_item(&mut self) -> Result<StmtListItem> {
+        Ok(match self.peek()?.value {
+            TokenData::Reserved(Reserved::Function) => StmtListItem::Decl(self.function_declaration()?),
+            _                                       => StmtListItem::Stmt(self.statement()?)
+        })
     }
 
     fn function_declaration(&mut self) -> Result<Decl> {
@@ -1281,23 +1275,13 @@ impl<I: Iterator<Item=char>> Parser<I> {
 
     // "new"+n MemberBaseExpression . Deref* Arguments<n Suffix*
     fn more_new_expression(&mut self, news: Vec<Token>, mut base: Expr) -> Result<Expr> {
-        let mut derefs = Vec::new();
-        while let Some(deref) = self.deref_opt()? {
-            derefs.push(deref);
+        for deref in self.iter_opt(Self::deref_opt) {
+            base = deref?.append_to(base);
         }
-        let mut args_lists = Vec::new();
-        for _ in 0..news.len() {
-            if self.peek_op()?.value != TokenData::LParen {
-                break;
-            }
-            args_lists.push(self.arguments()?);
-        }
-        for deref in derefs {
-            base = deref.append_to(base);
-        }
+        let news_len = news.len();
         let mut news = news.into_iter().rev();
-        for args in args_lists {
-            base = args.append_to_new(news.next().unwrap(), base);
+        for args in self.iter_opt(Self::arguments_opt).take(news_len) {
+            base = args?.append_to_new(news.next().unwrap(), base);
         }
         for new in news {
             let location = span(&Some(new.location), &base);
@@ -1331,6 +1315,14 @@ impl<I: Iterator<Item=char>> Parser<I> {
     fn argument(&mut self) -> Result<Expr> {
         // ES6: if let ellipsis = self.matches(TokenData::Ellipsis)? { ... }
         self.allow_in(true, |this| this.assignment_expression())
+    }
+
+    fn arguments_opt(&mut self) -> Result<Option<Arguments>> {
+        if self.peek_op()?.value != TokenData::LParen {
+            Ok(None)
+        } else {
+            self.arguments().map(Some)
+        }
     }
 
     // Arguments ::= "(" Argument*[","] ")"
@@ -1397,8 +1389,8 @@ impl<I: Iterator<Item=char>> Parser<I> {
 
     // MemberBaseExpression . Suffix*
     fn more_suffixes(&mut self, mut result: Expr) -> Result<Expr> {
-        while let Some(suffix) = self.suffix_opt()? {
-            result = suffix.append_to(result);
+        for suffix in self.iter_opt(Self::suffix_opt) {
+            result = suffix?.append_to(result);
         }
         Ok(result)
     }
@@ -1456,10 +1448,9 @@ impl<I: Iterator<Item=char>> Parser<I> {
     // UnaryExpression ::=
     //   Prefix* LHSExpression PostfixOperator?
     fn unary_expression(&mut self) -> Result<Expr> {
-        let mut prefixes = Vec::new();
-        while let Some(prefix) = self.match_prefix()? {
-            prefixes.push(prefix);
-        }
+        let prefixes =
+            self.iter_opt(Self::match_prefix)
+            .collect::<Result<Vec<_>>>()?;
         let mut arg = self.lhs_expression()?;
         if let Some(postfix) = self.match_postfix_operator_opt()? {
             let arg_location = *arg.tracking_ref();
@@ -1664,5 +1655,17 @@ impl<I: Iterator<Item=char>> Parser<I> {
         }
         let location = self.vec_span(&elts);
         Ok(Expr::Seq(location, elts))
+    }
+}
+
+impl<'a, I, T> Iterator for ParserIterator<'a, I, T> {
+    type Item = Result<T>;
+
+    fn next(&mut self) -> Option<Result<T>> {
+        match (self.method)(self.parser) {
+            Err(err) => Some(Err(err)),
+            Ok(None) => None,
+            Ok(Some(res)) => Some(Ok(res))
+        }
     }
 }
