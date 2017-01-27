@@ -1,7 +1,6 @@
 #![cfg(test)]
 
 extern crate esprit;
-extern crate estree;
 extern crate joker;
 extern crate serde_json;
 
@@ -13,7 +12,6 @@ extern crate test;
 extern crate unjson;
 
 use esprit::script;
-use estree::IntoScript;
 use joker::track::Untrack;
 use serde_json::value::Value;
 use std::ffi::OsStr;

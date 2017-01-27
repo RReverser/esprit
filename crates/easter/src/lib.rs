@@ -1,5 +1,6 @@
 extern crate joker;
 extern crate tristate;
+extern crate serde;
 
 #[cfg(feature = "nightly")]
 #[macro_use]
@@ -15,6 +16,31 @@ macro_rules! pub_mod {
     ($name:ident) => (pub mod $name {
         include!(concat!(env!("OUT_DIR"), "/", stringify!($name), ".rs"));
     })
+}
+
+macro_rules! count {
+    () => (0usize);
+    ( $x:tt $($xs:tt)* ) => (1usize + count!($($xs)*));
+}
+
+macro_rules! serialize {
+    ($name:ident as $implementation:block) => {
+        impl serde::Serialize for $name {
+            fn serialize<S: serde::Serializer>(&self, out: S) -> Result<S::Ok, S::Error>
+                $implementation
+        }
+    }
+}
+
+macro_rules! json {
+    (($key:ident : $value:expr),*) => {
+        let mut map = out.serialize_map(count!($($key)*))?;
+        $(
+            map.serialize_key(stringify!($key))?;
+            map.serialize_value($value)?;
+        )*
+        map.end()
+    }
 }
 
 pub_mod!(id);

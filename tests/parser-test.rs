@@ -2,7 +2,6 @@
 
 extern crate easter;
 extern crate esprit;
-extern crate estree;
 extern crate glob;
 extern crate joker;
 extern crate serde_json;
@@ -18,7 +17,6 @@ use easter::expr::Expr;
 use easter::patt::{AssignTarget, Patt};
 use easter::stmt::{Stmt, StmtListItem};
 use esprit::script;
-use estree::IntoScript;
 use glob::glob;
 use joker::track::Untrack;
 use serde_json::value::Value;

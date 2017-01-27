@@ -10,7 +10,6 @@
 extern crate serde;
 extern crate serde_json;
 extern crate tristate;
-extern crate estree;
 extern crate unjson;
 extern crate easter;
 extern crate joker;
