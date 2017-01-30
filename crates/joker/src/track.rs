@@ -1,4 +1,5 @@
-use std::fmt::{Debug, Formatter, Result};
+use std::fmt::{self, Debug, Formatter};
+use serde::ser::{Serialize, Serializer};
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct Posn {
@@ -18,8 +19,17 @@ impl Posn {
 }
 
 impl Debug for Posn {
-    fn fmt(&self, fmt: &mut Formatter) -> Result {
+    fn fmt(&self, fmt: &mut Formatter) -> fmt::Result {
         fmt.write_fmt(format_args!("{}:{}", self.line + 1, self.column + 1))
+    }
+}
+
+impl Serialize for Posn {
+    fn serialize<S: Serializer>(&self, serializer: &mut S) -> Result<(), S::Error> {
+        let mut state = serializer.serialize_struct("Posn", 2)?;
+        serializer.serialize_struct_elt(&mut state, "line", self.line)?;
+        serializer.serialize_struct_elt(&mut state, "column", self.column)?;
+        serializer.serialize_struct_end(state)
     }
 }
 
@@ -30,8 +40,17 @@ pub struct Span {
 }
 
 impl Debug for Span {
-    fn fmt(&self, fmt: &mut Formatter) -> Result {
+    fn fmt(&self, fmt: &mut Formatter) -> fmt::Result {
         fmt.write_fmt(format_args!("{:?}..{:?}", self.start, self.end))
+    }
+}
+
+impl Serialize for Span {
+    fn serialize<S: Serializer>(&self, serializer: &mut S) -> Result<(), S::Error> {
+        let mut state = serializer.serialize_struct("Span", 2)?;
+        serializer.serialize_struct_elt(&mut state, "start", self.start)?;
+        serializer.serialize_struct_elt(&mut state, "end", self.end)?;
+        serializer.serialize_struct_end(state)
     }
 }
 

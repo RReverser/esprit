@@ -6,7 +6,6 @@ use fun::Fun;
 use patt::{Patt, CompoundPatt};
 use expr::Expr;
 use punc::Semi;
-use serde::{Serialize, Serializer};
 
 #[derive(Debug, PartialEq, Clone, TrackingRef, TrackingMut, Untrack)]
 pub enum Import {
